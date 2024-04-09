@@ -4,7 +4,6 @@ import time
 import math
 import random
 
-
 def randomPolicy(state):
     while not state.isTerminal():
         try:
@@ -16,7 +15,7 @@ def randomPolicy(state):
 
 
 class treeNode():
-    def __init__(self, state, parent):
+    def __init__(self, state, action, parent, level):
         self.state = state
         self.isTerminal = state.isTerminal()
         self.isFullyExpanded = self.isTerminal
@@ -24,6 +23,9 @@ class treeNode():
         self.numVisits = 0
         self.totalReward = 0
         self.children = {}
+        self.level = level
+        self.goodRoute = False
+        self.action = action
 
     def __str__(self):
         s=[]
@@ -35,7 +37,14 @@ class treeNode():
 
 class mcts():
     def __init__(self, timeLimit=None, iterationLimit=None, explorationConstant=1 / math.sqrt(2),
-                 rolloutPolicy=randomPolicy):
+                 rolloutPolicy=randomPolicy, depth=3, width = 3, simLimit = 20):
+        
+        self.depth = depth
+        self.width = width
+        self.simLimit = simLimit
+        self.nodeArray = []
+        self.numSims = 0
+
         if timeLimit != None:
             if iterationLimit != None:
                 raise ValueError("Cannot have both a time limit and an iteration limit")
@@ -54,15 +63,19 @@ class mcts():
         self.rollout = rolloutPolicy
 
     def search(self, initialState, needDetails=False):
-        self.root = treeNode(initialState, None)
+        self.root = treeNode(initialState, None ,None, 0)
 
         if self.limitType == 'time':
             timeLimit = time.time() + self.timeLimit / 1000
             while time.time() < timeLimit:
                 self.executeRound()
+                if(self.numSims >= self.simLimit):
+                    self.pruneTree()
         else:
             for i in range(self.searchLimit):
                 self.executeRound()
+                if(self.numSims >= self.simLimit):
+                    self.pruneTree()
 
         bestChild = self.getBestChild(self.root, 0)
         action=(action for action, node in self.root.children.items() if node is bestChild).__next__()
@@ -91,8 +104,11 @@ class mcts():
         actions = node.state.getPossibleActions()
         for action in actions:
             if action not in node.children:
-                newNode = treeNode(node.state.takeAction(action), node)
+                newNode = treeNode(node.state.takeAction(action), action, node, (node.level+1))
                 node.children[action] = newNode
+                if(newNode.level == self.depth):
+                    self.nodeArray.append(newNode)
+                    self.numSims = self.numSims + 1
                 if len(actions) == len(node.children):
                     node.isFullyExpanded = True
                 return newNode
@@ -116,4 +132,41 @@ class mcts():
                 bestNodes = [child]
             elif nodeValue == bestValue:
                 bestNodes.append(child)
-        return random.choice(bestNodes)
+        try:
+            return random.choice(bestNodes)
+        except:
+            _, value = random.choice(list(node.children.items()))
+            return value
+    
+    def deleteChildren(self, node):
+        if not node:
+            return
+
+        if node.goodRoute:
+            for child_state in list(node.children.keys()):  # Iterate over a copy of keys
+                child = node.children[child_state]
+                self.deleteChildren(child)
+        else:
+            if node.parent:
+                node.parent.children.pop(node.action)  # Remove this node from its parent's children
+
+    def pruneTree(self):
+        print('Prune')
+        # Sorts array in decending order
+        self.nodeArray.sort(key=lambda node: node.numVisits, reverse=True)
+
+        bestNodes = self.nodeArray[:self.width]
+
+        #sets parents of top to be full expanded
+        for node in bestNodes:
+            node.goodRoute = True
+            nextNode = node.parent
+            while nextNode is not None:
+                nextNode.isFullyExpanded = True
+                nextNode.goodRoute = True
+                nextNode = nextNode.parent
+
+        self.deleteChildren(self.root)
+        self.numSims = 0
+
+

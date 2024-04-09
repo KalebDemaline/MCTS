@@ -75,7 +75,7 @@ class Action():
 
 if __name__=="__main__":
     initialState = NaughtsAndCrossesState()
-    searcher = mcts(timeLimit=1000)
+    searcher = mcts(iterationLimit=1000, depth=4, width=2, simLimit=10)
     action = searcher.search(initialState=initialState)
 
     print(action)
